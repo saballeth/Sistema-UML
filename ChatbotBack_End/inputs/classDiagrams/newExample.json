@@ -1,0 +1,41 @@
+{
+    "diagramType": "classDiagram",
+    "declaringElements" : [
+        {
+            "type": "abstract class | class | interface | enum | annotation | execption | struct",
+            "attributes" : [
+                {
+                    "name": "attributeName",
+					"type": "dataType",
+					"visibility": "public | private | protected",
+					"isStatic": false,
+					"isFinal": false
+                }
+            ],
+            "methods": [
+                {
+                    "name": "methodName",
+					"type": "dataType",
+                    "returnType": "returnType",
+					"visibility": "public | private | protected",
+					"isStatic": false,
+                    "params" : [
+                        {
+                            "type": "dataType",
+                            "name": "paramName"
+                        }
+                    ]
+                }
+            ]
+
+        }
+    ],
+    "relationShips" : [
+        {
+            "type" : "inheritance | composition | aggregation | association | instantiation | realization",
+            "source" : "SourceClass",
+            "target" : "TargetClass",
+            "multiplicity" : "1..1 | 0..* | 1..* | etc."
+        }
+    ]
+}

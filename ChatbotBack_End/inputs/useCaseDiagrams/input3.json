@@ -1,0 +1,104 @@
+{
+    "diagramType": "useCaseDiagram",
+    "actors": [
+        {
+            "name": "Cliente",
+            "alias": "actorCliente",
+            "stereotype": "usuario",
+            "business": true
+        },
+        {
+            "name": "Administrador",
+            "alias": "actorAdmin",
+            "stereotype": "gestor",
+            "business": false
+        }
+    ],
+    "useCases": [
+        {
+            "name": "Comprar Producto",
+            "alias": "useCaseCompra",
+            "business": true,
+            "stereotype": "transaccion"
+        },
+        {
+            "name": "Gestionar Inventario",
+            "alias": "useCaseInventario",
+            "business": true,
+            "stereotype": "gestion"
+        }
+    ],
+    "packages": [
+        {
+            "name": "E-Commerce",
+            "alias": "packageEcom",
+            "useCases": [
+                {
+                    "name": "Añadir al Carrito",
+                    "alias": "useCaseCarrito",
+                    "business": true
+                }
+            ],
+            "actors": [
+                {
+                    "name": "Sistema de Pagos",
+                    "alias": "actorPago",
+                    "stereotype": "servicio",
+                    "style": "awesome",
+                    "business": true
+                }
+            ],
+            "packages": [
+                {
+                    "name": "Pago",
+                    "alias": "packagePago",
+                    "useCases": [
+                        {
+                            "name": "Procesar Pago",
+                            "alias": "useCaseProcesarPago",
+                            "business": true
+                        }
+                    ],
+                    "actors": [
+                        {
+                            "name": "Banco",
+                            "alias": "actorBanco",
+                            "stereotype": "entidad",
+                            "business": true
+                        }
+                    ],
+                    "packages": []
+                }
+            ]
+        }
+    ],
+    "relationships": [
+        {
+            "type": "actor_usecase",
+            "principal": "actorCliente",
+            "secondary": "useCaseCompra",
+            "extend": ">",
+            "direction": "right",
+            "label": "Realiza",
+            "stereotype": "include"
+        },
+        {
+            "type": "useCase_usecase",
+            "principal": "useCaseCarrito",
+            "secondary": "useCaseCompra",
+            "extend": "<",
+            "direction": "down",
+            "label": "Depende de",
+            "stereotype": "extends"
+        },
+        {
+            "type": "package_package",
+            "principal": "packageEcom",
+            "secondary": "packagePago",
+            "extend": ">",
+            "direction": "left",
+            "label": "Relaciona con",
+            "stereotype": "include"
+        }
+    ]
+}

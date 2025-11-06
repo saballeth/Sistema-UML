@@ -1,0 +1,93 @@
+{
+    "diagramType": "useCaseDiagram",
+    "actors": [
+      {
+        "name": "Cliente",
+        "type": "primary"
+      },
+      {
+        "name": "Administrador",
+        "type": "primary"
+      },
+      {
+        "name": "SistemaDePago",
+        "type": "secondary"
+      }
+    ],
+    "useCases": [
+      {
+        "name": "IniciarSesion",
+        "actors": ["Cliente", "Administrador"],
+        "relationships": []
+      },
+      {
+        "name": "Registrarse",
+        "actors": ["Cliente"],
+        "relationships": []
+      },
+      {
+        "name": "VerDetallesProducto",
+        "actors": ["Cliente"],
+        "relationships": []
+      },
+      {
+        "name": "BuscarProducto",
+        "actors": ["Cliente"],
+        "relationships": [
+          {
+            "type": "include",
+            "target": "VerDetallesProducto"
+          }
+        ]
+      },
+    
+      
+      {
+        "name": "RealizarPago",
+        "actors": ["Cliente", "SistemaDePago"],
+        "relationships": []
+      },
+      {
+        "name": "AgregarAlCarrito",
+        "actors": ["Cliente"],
+        "relationships": [
+          {
+            "type": "extend",
+            "target": "RealizarPago"
+          }
+        ]
+      },
+      
+
+      {
+        "name": "AgregarProducto",
+        "actors": ["Administrador"],
+        "relationships": []
+      },
+      {
+        "name": "EliminarProducto",
+        "actors": ["Administrador"],
+        "relationships": []
+      },
+      {
+        "name": "GestionarInventario",
+        "actors": ["Administrador"],
+        "relationships": [
+          {
+            "type": "include",
+            "target": "AgregarProducto"
+          },
+          {
+            "type": "include",
+            "target": "EliminarProducto"
+          }
+        ]
+      },
+      
+      {
+        "name": "GenerarReporte",
+        "actors": ["Administrador"],
+        "relationships": []
+      }
+    ]
+  }

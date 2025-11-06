@@ -1,0 +1,112 @@
+{
+  "diagramType": "classDiagram",
+  "classes": [
+    {
+      "name": "Persona",
+      "attributes": [
+        { "name": "nombre", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false },
+        { "name": "edad", "type": "int", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "getNombre", "returnType": "String", "visibility": "public" },
+        { "name": "setNombre", "parameters": ["String"], "visibility": "public" }
+      ],
+      "relationships": [
+        { "type": "inheritance", "target": "Estudiante" },
+        { "type": "inheritance", "target": "Profesor" }
+
+      ],
+      "isAbstract": false,
+      "implementsInterfaces": ["Serializable"]
+    },
+    {
+      "name": "Estudiante",
+      "attributes": [
+        { "name": "matricula", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "estudiar", "returnType": "void", "visibility": "public" }
+      ],
+      "relationships": [
+      ],
+      "isAbstract": false,
+      "implementsInterfaces": []
+    },
+    {
+      "name": "Profesor",
+      "attributes": [
+        { "name": "salario", "type": "double", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "ensenar", "returnType": "void", "visibility": "public" }
+      ],
+      "relationships": [
+      ],
+      "isAbstract": false,
+      "implementsInterfaces": []
+    },
+    {
+      "name": "Curso",
+      "attributes": [
+        { "name": "codigo", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false },
+        { "name": "nombre", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "agregarEstudiante", "parameters": ["Estudiante"], "returnType": "void", "visibility": "public" }
+      ],
+      "relationships": [
+        { "type": "composition", "target": "Profesor", "multiplicity": "1..1" },
+        { "type": "composition", "target": "Estudiante", "multiplicity": "1..*" }
+      ],
+      "isAbstract": false,
+      "implementsInterfaces": ["Serializable"]
+    },
+    {
+      "name": "Animal",
+      "attributes": [
+        { "name": "nombre", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "hacerSonido", "returnType": "void", "visibility": "public", "isAbstract": true }
+      ],
+      "relationships": [
+        { "type": "inheritance", "target": "Perro" },
+        { "type": "inheritance", "target": "Gato" }
+      ],
+      "isAbstract": true,
+      "implementsInterfaces": ["Serializable"]
+    },
+    {
+      "name": "Perro",
+      "attributes": [
+        { "name": "raza", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "hacerSonido", "returnType": "void", "visibility": "public" }
+      ],
+      "relationships": [],
+      "isAbstract": false,
+      "implementsInterfaces": []
+    },
+    {
+      "name": "Gato",
+      "attributes": [
+        { "name": "color", "type": "String", "visibility": "private", "isStatic": false, "isFinal": false }
+      ],
+      "methods": [
+        { "name": "hacerSonido", "returnType": "void", "visibility": "public" }
+      ],
+      "relationships": [],
+      "isAbstract": false,
+      "implementsInterfaces": []
+    }
+  ],
+  "interfaces": [
+    {
+      "name": "Serializable",
+      "methods": [
+        { "name": "serializar", "returnType": "String" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+    "diagramType": "classDiagram",
+    "classes": [
+      	{
+        	"name": "User",
+        	"attributes": [
+				{
+					"name": "password",
+					"type": "String",
+					"visibility": "private",
+					"isStatic": false,
+					"isFinal": false
+				}
+        	],
+			"isAbstract": false
+		},
+		{
+			"name": "Person",
+			"attributes": [
+				{
+					"name": "name",
+					"type": "String",
+					"visibility": "private",
+					"isStatic": false,
+					"isFinal": false
+				},
+				{
+					"name": "age",
+					"type": "int",
+					"visibility": "private",
+					"isStatic": false,
+					"isFinal": false
+				}
+        	],
+			"methods": [
+				{
+					"name": "sayHi",
+					"returnType": "String" 
+				}
+			],
+			"relationships": [
+				{
+					"type": "inheritance",
+					"target": "User",
+					"multiplicity": "0..*"
+				}
+			],
+			"isAbstract": true
+		}
+    ]
+}

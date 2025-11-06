@@ -1,0 +1,90 @@
+{
+    "diagramType": "classDiagram",
+    "declaringElements" : [
+        {
+            "type": "abstract class",
+            "name" : "Persona",
+            "attributes" : [
+                {
+                    "name": "nombre",
+					"type": "String",
+					"visibility": "private",
+					"isStatic": false,
+					"isFinal": false
+                }
+            ],
+            "methods": [
+                {
+                    "name": "saludar",
+                    "returnType": "String",
+					"visibility": "public"
+                }
+            ]
+        },
+        {
+            "type": "class",
+            "name" : "Usuario",
+            "attributes" : [
+                {
+                    "name": "password",
+					"type": "String",
+					"visibility": "private"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "login",
+                    "returnType": "Bool",
+					"visibility": "public",
+                    "params" : [
+                        {
+                            "type": "String",
+                            "name": "username"
+                        },
+                        {
+                            "type": "String",
+                            "name": "password"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "class",
+            "name" : "Cuenta",
+            "attributes" : [
+                {
+                    "name": "monto",
+					"type": "Float",
+					"visibility": "private"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "recargar",
+                    "returnType": "Bool",
+					"visibility": "public",
+                    "params" : [
+                        {
+                            "type": "Float",
+                            "name": "valor"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "relationShips" : [
+        {
+            "type" : "inheritance",
+            "source" : "Persona",
+            "target" : "Usuario"
+        },
+        {
+            "type" : "composition",
+            "source" : "Usuario",
+            "target" : "Cuenta",
+            "multiplicity" : "1..1"
+        }
+    ]
+}

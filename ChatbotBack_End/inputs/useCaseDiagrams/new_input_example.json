@@ -1,0 +1,53 @@
+{
+    "diagramType": "useCaseDiagram",
+    "actors": [
+        {
+			"name": "ActorName",
+            "alias": "actorAlias",
+            "stereotype": "contentStereotype",
+            "business": true
+        }
+  	],
+    "useCases": [
+		{   
+			"name": "UseCaseName",
+            "alias": "useCaseAlias",
+            "business": true,
+            "stereotype": "contentStereotype"
+		}
+    ],
+    "packages":[
+        {
+            "name": "PackageName",
+            "alias": "packageAlias",
+            "useCases": [
+                {   
+                    "name": "UseCaseName",
+                    "alias": "useCaseAlias",
+                    "business": true
+                }
+            ],
+            "actors": [
+                {
+                    "name": "ActorName",
+                    "alias": "actorAlias",
+                    "stereotype": "contentStereotype",
+                    "business": true
+                }
+            ],
+            "packages":[]
+        }
+    ],
+    "relationships":[
+
+        {
+            "type": "actor_actor | actor_usecase | useCase_usecase | package_package",
+            "principal": "alias | name",
+            "secondary": "alias | name",
+            "extend": "> | <",
+            "direction": "left | right | up | down",
+            "label": "labelContent",
+            "stereotype": "include | extends"
+        }
+    ]
+}
