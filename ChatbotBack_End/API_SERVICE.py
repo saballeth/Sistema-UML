@@ -5,8 +5,9 @@ import json
 import os
 import jsonschema
 from decoder import JsonPuml
-from main import classify_and_generate_diagram, regenerate_diagram_from_data
+from main import classify_and_generate_diagram, regenerate_diagram_from_data, diagram_classifier, LLM_FALLBACK_CONFIDENCE
 from OperationCRUD import DiagramCRUD
+from app.services.llm_client import ask_llm_for_diagram_type
 
 # Carga el esquema UML una sola vez
 with open("uml_schema.json", encoding="utf-8") as f:
@@ -186,3 +187,134 @@ async def websocket_generate_diagram(websocket: WebSocket):
         await websocket.send_json({"error": f"Error al generar el diagrama: {e}"})
     finally:
         await websocket.close()
+
+
+@app.websocket("/ws/chat/{user_id}")
+async def ws_chat(websocket: WebSocket, user_id: str):
+    """
+    WebSocket para diálogo en tiempo real. Mantiene contexto en `diagram_classifier` por user_id.
+
+    Mensajes entrantes (JSON):
+      {"text": "...", "follow_up": false}
+
+    Respuestas (JSON):
+      - {"analysis": {...}}  # resultado del clasificador
+      - {"clarify": "..."} # si necesita aclaración
+      - {"svg": "<svg>...</svg>"} # si genera diagrama
+    """
+    await websocket.accept()
+    try:
+        async for raw in websocket.iter_text():
+            try:
+                payload = json.loads(raw)
+                text = payload.get("text", "")
+                follow_up = bool(payload.get("follow_up", False))
+
+                if not text or not text.strip():
+                    await websocket.send_json({"error": "No text provided"})
+                    continue
+
+                # Analizar con el clasificador (pasar follow_up)
+                intent_result = diagram_classifier.analyze_conversation(user_id, text, is_follow_up=follow_up)
+                intent = intent_result.get("intent")
+                confidence = intent_result.get("confidence", 0.0)
+
+                # Si ambiguous/unknown o baja confianza -> consultar LLM
+                if intent in ("ambiguous", "unknown", None) or confidence < LLM_FALLBACK_CONFIDENCE:
+                    try:
+                        llm_decision = await ask_llm_for_diagram_type(text)
+                    except Exception as e:
+                        await websocket.send_json({"analysis": intent_result, "error": f"LLM error: {e}"})
+                        continue
+
+                    if llm_decision.get("resolved") and llm_decision.get("diagram_type"):
+                        # LLM resolvió: generar diagrama
+                        result = classify_and_generate_diagram(text, None, user_id=user_id)
+                        result.setdefault("analysis", intent_result)["llm_decision"] = llm_decision
+                        await websocket.send_json(result)
+                    else:
+                        # Enviar pregunta de clarificación al cliente
+                        await websocket.send_json({
+                            "text": text,
+                            "analysis": intent_result,
+                            "clarify": llm_decision.get("question") or "¿Quieres un diagrama de clases o un diagrama de casos de uso?",
+                            "llm_raw": llm_decision.get("raw")
+                        })
+                else:
+                    # Intención clara: intentar generar diagrama
+                    result = classify_and_generate_diagram(text, None, user_id=user_id)
+                    await websocket.send_json(result)
+
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "Invalid JSON"})
+            except Exception as e:
+                await websocket.send_json({"error": str(e)})
+    finally:
+        await websocket.close()
+
+
+@app.post("/chat")
+async def chat_text(request: Request):
+    """
+    Endpoint para recibir texto plano (o JSON {"text": ...}).
+    - Si el clasificador está seguro, intenta generar el diagrama.
+    - Si es ambiguous/unknown o la confianza es baja, consulta al LLM y devuelve una pregunta de clarificación o genera si el LLM resuelve.
+    """
+    # leer body: soporta text/plain o application/json
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = await request.json()
+        # soportar respuesta de aclaración: {"clarify_answer": "..."} o {"follow_up": true, "text": "..."}
+        clarify_answer = body.get("clarify_answer")
+        follow_up_flag = bool(body.get("follow_up"))
+        text = clarify_answer or body.get("text")
+        user_id = body.get("user_id", request.headers.get("X-User-Id", "web_user"))
+    else:
+        raw = await request.body()
+        text = raw.decode("utf-8") if raw else ""
+        user_id = request.headers.get("X-User-Id", "web_user")
+
+    is_follow_up = False
+    # Si el cliente indica que esto es una respuesta a la aclaración, marcar follow-up
+    if "application/json" in content_type:
+        if clarify_answer or follow_up_flag:
+            is_follow_up = True
+
+    if not text or not text.strip():
+        return JSONResponse({"error": "No text provided"}, status_code=400)
+
+    # Analizar con el clasificador en memoria
+    try:
+        # pasar is_follow_up para que el clasificador use refuerzo contextual
+        intent_result = diagram_classifier.analyze_conversation(user_id, text, is_follow_up)
+    except Exception as e:
+        return JSONResponse({"error": f"Classifier error: {e}"}, status_code=500)
+
+    intent = intent_result.get("intent")
+    confidence = intent_result.get("confidence", 0.0)
+
+    # Si es ambiguous/unknown o baja confianza -> preguntar al LLM
+    if intent in ("ambiguous", "unknown", None) or confidence < LLM_FALLBACK_CONFIDENCE:
+        try:
+            llm_decision = await ask_llm_for_diagram_type(text)
+        except Exception as e:
+            return JSONResponse({"analysis": intent_result, "error": f"LLM error: {e}"}, status_code=500)
+
+        if llm_decision.get("resolved") and llm_decision.get("diagram_type"):
+            # LLM resolvió: generar diagrama usando el flujo existente
+            result = classify_and_generate_diagram(text, None, user_id=user_id)
+            # incluir la decisión del LLM en el análisis
+            result.setdefault("analysis", intent_result)["llm_decision"] = llm_decision
+            return JSONResponse(result)
+        else:
+            # Devolver la pregunta sugerida para que el frontend la muestre al usuario
+            return JSONResponse({
+                "text": text,
+                "analysis": intent_result,
+                "clarify": llm_decision.get("question") or "¿Quieres un diagrama de clases o un diagrama de casos de uso?",
+                "llm_raw": llm_decision.get("raw")
+            })
+
+    # Si hay intención clara y confianza suficiente, intentar generar diagrama
+    result = classify_and_generate_diagram(text, None, user_id=user_id)
+    return JSONResponse(result)

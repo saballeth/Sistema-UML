@@ -6,7 +6,9 @@ from typing import Optional
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
-def _sync_query_openai(prompt: str, model: str = "gpt-3.5-turbo") -> dict:
+DEFAULT_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+
+def _sync_query_openai(prompt: str, model: str = None) -> dict:
     """
     Síncrono: llama a la API de OpenAI ChatCompletion y devuelve la respuesta.
     Ejecutar en hilo con asyncio.to_thread desde código async.
@@ -20,7 +22,7 @@ def _sync_query_openai(prompt: str, model: str = "gpt-3.5-turbo") -> dict:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": model,
+        "model": model or DEFAULT_MODEL,
         "messages": [
             {"role": "system", "content": "Eres un asistente que decide si un texto describe un diagrama de clases o un diagrama de casos de uso o necesita preguntar más al usuario."},
             {"role": "user", "content": prompt}

@@ -318,17 +318,45 @@ class AdvancedDiagramClassifier:
         
         # Seleccionar intención con mayor score
         if avg_scores:
-            best_intent = max(avg_scores, key=avg_scores.get)
-            best_confidence = min(avg_scores[best_intent], 0.95)  # Cap at 0.95
-            
+            # Ordenar intents por score
+            sorted_intents = sorted(avg_scores.items(), key=lambda x: x[1], reverse=True)
+            best_intent, best_score = sorted_intents[0]
+            second_score = sorted_intents[1][1] if len(sorted_intents) > 1 else 0.0
+
+            # Detectar ambigüedad: si la diferencia entre top2 es pequeña o la mejor puntuación es baja
+            score_diff = best_score - second_score
+            # criterios: diferencia menor a 0.08 (8%) o mejor score < 0.55 => ambiguous
+            if score_diff < 0.08 or best_score < 0.55:
+                ambiguity_reason = []
+                if score_diff < 0.08:
+                    ambiguity_reason.append(f"small_score_diff={score_diff:.2f}")
+                if best_score < 0.55:
+                    ambiguity_reason.append(f"low_best_score={best_score:.2f}")
+
+                return {
+                    'intent': 'ambiguous',
+                    'confidence': round(best_score, 2),
+                    'method': 'ambiguous_detection',
+                    'supporting_analyses': sum(len(v) for v in intent_scores.values()),
+                    'ambiguity_reason': ",".join(ambiguity_reason) if ambiguity_reason else 'undetermined',
+                    'analysis_breakdown': {
+                        'basic': basic,
+                        'contextual': contextual,
+                        'industry': industry,
+                        'semantic': semantic,
+                        'avg_scores': avg_scores
+                    }
+                }
+
+            best_confidence = min(best_score, 0.95)  # Cap at 0.95
             supporting_analyses = len(intent_scores[best_intent])
-            
+
             # Ajuste final de confianza basado en número de análisis de apoyo
             if supporting_analyses >= 2:
                 best_confidence = min(1.0, best_confidence + 0.05)
             if supporting_analyses >= 3:
                 best_confidence = min(1.0, best_confidence + 0.03)
-            
+
             return {
                 'intent': best_intent,
                 'confidence': best_confidence,

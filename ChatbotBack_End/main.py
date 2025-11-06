@@ -108,8 +108,9 @@ def classify_and_generate_diagram(text, uml_schema, user_id="default"):
     confidence = intent_result.get("confidence", 0.0)
     method = intent_result.get("method", "")
 
-    # Si la intención es desconocida o la confianza es baja, solicitar al LLM aclaración
-    if diagram_type in ("unknown", None) or confidence < LLM_FALLBACK_CONFIDENCE:
+    # Si la intención es desconocida, ambigua o la confianza es baja, solicitar al LLM aclaración
+    if diagram_type in ("unknown", "ambiguous", None) or confidence < LLM_FALLBACK_CONFIDENCE:
+        # pedir al LLM que resuelva o devuelva una pregunta de aclaración
         llm_decision = asyncio.run(ask_llm_for_diagram_type(text))
         # si LLM resolvió el tipo, usarlo
         if llm_decision.get("resolved") and llm_decision.get("diagram_type"):
@@ -122,7 +123,8 @@ def classify_and_generate_diagram(text, uml_schema, user_id="default"):
             return {
                 "text": text,
                 "analysis": intent_result,
-                "clarify": llm_decision.get("question") or "¿Puedes especificar si quieres un diagrama de clases o un diagrama de casos de uso?"
+                "clarify": llm_decision.get("question") or "¿Puedes especificar si quieres un diagrama de clases o un diagrama de casos de uso?",
+                "llm_raw": llm_decision.get("raw")
             }
 
     # 2. Construye el JSON para el decoder
