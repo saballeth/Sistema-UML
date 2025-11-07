@@ -19,31 +19,144 @@ def build_json_for_decoder(text, diagram_type, classifier=None, user_id="default
     context = classifier.get_user_context(user_id) if classifier and hasattr(classifier, "get_user_context") else {}
 
     if diagram_type == "diagrama_clases":
+        # Primero intentar detectar bloques del tipo "Clase: atributos...; métodos..."
+        pre_parsed = {}
+        for m in re.finditer(r"\b([A-ZÁÉÍÓÚÑ]\w*)\s*:\s*([^\n]+)", text):
+            cls = m.group(1)
+            rest = m.group(2)
+            attrs = []
+            methods_list = []
+            # Buscar secciones por palabras clave
+            # ejemplo: "atributos: id, nombre; métodos: crear(), eliminar()"
+            m_attrs = re.search(r"atribut(?:o|os)\s*[:\-]?\s*([^;]+)", rest, re.IGNORECASE)
+            if m_attrs:
+                for a in re.split(r',|\s+y\s+', m_attrs.group(1)):
+                    n = a.strip()
+                    # limpiar prefijos no deseados (ej. "s: id") y caracteres extra
+                    n = re.sub(r'^[^\wÀ-ÿ_]+', '', n)
+                    n = re.sub(r'^[A-Za-zÀ-ÿ0-9_]+:\s*', '', n)
+                    n = re.sub(r'[^\wÀ-ÿ_].*$', '', n)
+                    if n:
+                        attrs.append(n)
+            m_methods = re.search(r"métod(?:o|os)\s*[:\-]?\s*([^;]+)", rest, re.IGNORECASE)
+            if m_methods:
+                for mm in re.split(r',|\s+y\s+', m_methods.group(1)):
+                    name = re.sub(r'\(.*\)', '', mm).strip()
+                    # eliminar prefijos tipo "métodos:" o "s:" que puedan quedar
+                    name = re.sub(r'^[A-Za-zÀ-ÿ0-9_]+:\s*', '', name)
+                    # limpiar caracteres no alfanuméricos sobrantes
+                    name = re.sub(r'[^\wÀ-ÿ_].*$', '', name)
+                    if name:
+                        methods_list.append(name)
+            if attrs or methods_list:
+                pre_parsed[cls] = {'attributes': attrs, 'methods': methods_list}
+
+        # Buscar nombres de clase en varias formas: "clase X", o "clases A, B y C"
         class_names = re.findall(r'clase\s+(\w+)', text, re.IGNORECASE)
+        if not class_names:
+            m = re.search(r'clases?\s+([A-ZÁÉÍÓÚÑ][\w]*(?:\s*,\s*[A-ZÁÉÍÓÚÑ][\w]*|\s+y\s+[A-ZÁÉÍÓÚÑ][\w]*)*)', text)
+            if m:
+                names = re.split(r',|\s+y\s+', m.group(1))
+                class_names = [n.strip() for n in names if n.strip()]
+
+        # Añadir clases detectadas en el contexto
         if context and context.get('messages'):
             for msg in context['messages']:
                 class_names += re.findall(r'clase\s+(\w+)', msg, re.IGNORECASE)
-        class_names = list(set(class_names))
+        # Añadir también clases detectadas en pre_parsed si no hay detecciones explícitas
+        if not class_names and pre_parsed:
+            class_names = list(pre_parsed.keys())
+        else:
+            for k in pre_parsed.keys():
+                if k not in class_names:
+                    class_names.append(k)
+
+        class_names = list(dict.fromkeys(class_names))  # mantener orden, eliminar duplicados
+
         declaring_elements = []
+        # Extraer atributos y métodos asociados (intento simple: si se menciona explícitamente junto a la clase)
         for class_name in class_names:
             attributes = []
-            for attr in re.findall(r'atributo\s+(\w+)', text, re.IGNORECASE):
-                attributes.append({
-                    "name": attr,
-                    "type": "String",
-                    "visibility": "public",
-                    "isStatic": False,
-                    "isFinal": False
-                })
+            # Si habíamos preparseado un bloque para esta clase, usarlo primero
+            if class_name in pre_parsed:
+                for n in pre_parsed[class_name].get('attributes', []):
+                    attributes.append({
+                        "name": n,
+                        "type": "String",
+                        "visibility": "public",
+                        "isStatic": False,
+                        "isFinal": False
+                    })
+                for mname in pre_parsed[class_name].get('methods', []):
+                    # dejar que el bloque sobreescriba métodos detectados posteriormente
+                    pass
+            # buscar "<Class> tiene atributo(s) a, b y c" o "atributo x"
+            m_attr = re.search(rf'{class_name}[^\.\,\n]*atributo[s]?\s+([\w\s,]+)', text, re.IGNORECASE)
+            if m_attr:
+                attr_list = re.split(r',|\s+y\s+', m_attr.group(1))
+                for attr in attr_list:
+                    n = attr.strip()
+                    if n:
+                        # evitar duplicados si ya agregado por pre_parsed
+                        if any(a['name'] == n for a in attributes):
+                            continue
+                        attributes.append({
+                            "name": n,
+                            "type": "String",
+                            "visibility": "public",
+                            "isStatic": False,
+                            "isFinal": False
+                        })
+            else:
+                # fallback global: sólo aplicarlo si hay una única clase detectada
+                if len(class_names) <= 1:
+                    for attr in re.findall(r'atributo[s]?\s+([\w]+)', text, re.IGNORECASE):
+                        attributes.append({
+                            "name": attr,
+                            "type": "String",
+                            "visibility": "public",
+                            "isStatic": False,
+                            "isFinal": False
+                        })
+
             methods = []
-            for method in re.findall(r'método\s+(\w+)', text, re.IGNORECASE):
-                methods.append({
-                    "name": method,
-                    "returnType": "void",
-                    "visibility": "public",
-                    "isAbstract": False,
-                    "params": []
-                })
+            # Cargar métodos desde pre_parsed si existen
+            if class_name in pre_parsed:
+                for mname in pre_parsed[class_name].get('methods', []):
+                    methods.append({
+                        "name": mname,
+                        "returnType": "void",
+                        "visibility": "public",
+                        "isAbstract": False,
+                        "params": []
+                    })
+            m_methods = re.search(rf'{class_name}[^\.\,\n]*método[s]?\s+([\w\s,()]+)', text, re.IGNORECASE)
+            if m_methods:
+                method_list = re.split(r',|\s+y\s+', m_methods.group(1))
+                for method in method_list:
+                    name = re.sub(r'\(.*\)', '', method).strip()
+                    if name:
+                        if any(m['name'] == name for m in methods):
+                            continue
+                        methods.append({
+                            "name": name,
+                            "returnType": "void",
+                            "visibility": "public",
+                            "isAbstract": False,
+                            "params": []
+                        })
+            else:
+                # fallback global: sólo aplicarlo si hay una única clase detectada
+                if len(class_names) <= 1:
+                    for method in re.findall(r'método[s]?\s+([\w]+)', text, re.IGNORECASE):
+                        methods.append({
+                            "name": method,
+                            "returnType": "void",
+                            "visibility": "public",
+                            "isAbstract": False,
+                            "params": []
+                        })
+
             declaring_elements.append({
                 "type": "class",
                 "name": class_name,
@@ -58,6 +171,10 @@ def build_json_for_decoder(text, diagram_type, classifier=None, user_id="default
                 "target": match[1],
                 "multiplicity": ["", "", "", ""]
             })
+        # Filtrar atributos inválidos (evitar frases completas); mantener solo nombres simples
+        for el in declaring_elements:
+            el['attributes'] = [a for a in el.get('attributes', []) if isinstance(a.get('name'), str) and ' ' not in a.get('name')]
+
         return {
             "diagramType": "classDiagram",
             "declaringElements": declaring_elements,
@@ -134,6 +251,19 @@ def classify_and_generate_diagram(text, uml_schema, user_id="default"):
             "text": text,
             "analysis": intent_result,
             "error": "No se pudo construir el JSON para el diagrama."
+        }
+    # Si el JSON está vacío de elementos significativos, pedir aclaración en lugar de generar un diagrama vacío
+    if diagram_type == "diagrama_clases" and (not data.get("declaringElements") or len(data.get("declaringElements")) == 0):
+        return {
+            "text": text,
+            "analysis": intent_result,
+            "clarify": "No se detectaron clases ni detalles (atributos/métodos). ¿Puedes nombrar al menos una clase y, si es posible, sus atributos o métodos?"
+        }
+    if diagram_type == "diagrama_casos_uso" and (not data.get("actors") and not data.get("useCases")):
+        return {
+            "text": text,
+            "analysis": intent_result,
+            "clarify": "No se detectaron actores ni casos de uso. ¿Puedes indicar los actores y/o los casos de uso que quieres modelar?"
         }
     try:
         schema = get_schema(diagram_type)

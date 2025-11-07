@@ -3,15 +3,36 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import json
 import os
+import uuid
 import jsonschema
+from jsonschema import validate, ValidationError
 from decoder import JsonPuml
 from main import classify_and_generate_diagram, regenerate_diagram_from_data, diagram_classifier, LLM_FALLBACK_CONFIDENCE
 from OperationCRUD import DiagramCRUD
 from app.services.llm_client import ask_llm_for_diagram_type
 
-# Carga el esquema UML una sola vez
-with open("uml_schema.json", encoding="utf-8") as f:
-    UML_SCHEMA = json.load(f)
+# Cargar esquemas individuales desde la carpeta "Validation Schemas"
+SCHEMAS = {}
+SCHEMA_DIR = os.path.join(os.path.dirname(__file__), "Validation Schemas")
+try:
+    class_schema_path = os.path.join(SCHEMA_DIR, "classDiagram_schema.json")
+    usecase_schema_path = os.path.join(SCHEMA_DIR, "useCaseDiagram_schema.json")
+    if os.path.exists(class_schema_path):
+        with open(class_schema_path, encoding="utf-8") as f:
+            SCHEMAS['classDiagram'] = json.load(f)
+    if os.path.exists(usecase_schema_path):
+        with open(usecase_schema_path, encoding="utf-8") as f:
+            SCHEMAS['useCaseDiagram'] = json.load(f)
+except Exception:
+    # No detener el arranque si los esquemas faltan o están mal formados; SCHEMAS se queda vacío
+    SCHEMAS = {}
+
+def _get_schema_for_data(data: dict):
+    """Devuelve el esquema JSON apropiado según data['diagramType'] si está disponible."""
+    if not isinstance(data, dict):
+        return None
+    diagram_type = data.get('diagramType')
+    return SCHEMAS.get(diagram_type)
 
 app = FastAPI()
 
@@ -122,7 +143,10 @@ async def ws_editor(websocket: WebSocket, diagram_id: str):
 async def process_uml(request: Request):
     try:
         data = await request.json()
-        validate(instance=data, schema=UML_SCHEMA)
+        # Determinar esquema apropiado según el contenido; si no hay esquema, omitir validación
+        schema = _get_schema_for_data(data)
+        if schema is not None:
+            validate(instance=data, schema=schema)
         config = {
             "plant_uml_path": os.path.join(os.getcwd(), "plant_uml_exc"),
             "plant_uml_version": "plantuml-1.2025.2.jar",
@@ -149,9 +173,8 @@ async def process_uml(request: Request):
 async def websocket_audio(websocket: WebSocket):
     await websocket.accept()
     try:
-        audio_bytes = await websocket.receive_bytes()
-        result = classify_and_generate_diagram(audio_bytes, UML_SCHEMA)
-        await websocket.send_json(result)
+        # Por ahora no procesamos audio raw en este endpoint (requiere STT). Devolver mensaje claro.
+        await websocket.send_json({"error": "Audio input not supported on this endpoint yet. Send text via /chat or implement STT."})
     except Exception as e:
         await websocket.send_json({"error": str(e)})
     finally:
@@ -162,7 +185,9 @@ async def websocket_generate_diagram(websocket: WebSocket):
     await websocket.accept()
     try:
         data = await websocket.receive_json()
-        jsonschema.validate(instance=data, schema=UML_SCHEMA)
+        schema = _get_schema_for_data(data)
+        if schema is not None:
+            jsonschema.validate(instance=data, schema=schema)
         config = {
             "plant_uml_path": os.path.join(os.getcwd(), "plant_uml_exc"),
             "plant_uml_version": "plantuml-1.2025.2.jar",

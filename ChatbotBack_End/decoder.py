@@ -80,10 +80,12 @@ class JsonPuml:
                 output.write(self._code)
 
         # Ejecutar PlantUML para generar la imagen
+            # Forzar salida en formato SVG para que el flujo espere .svg
             subprocess.run([
                 "java", "-jar", plant_uml,  # Ejecutar PlantUML
+                "-tsvg",                    # generar SVG
                 "-o", self._output_path,    # Carpeta de salida
-                out                         # Archivo .puml de entrada
+                out                          # Archivo .puml de entrada
             ], check=True)
 
         except FileNotFoundError as e:
@@ -449,12 +451,12 @@ class DecodeClass:
                 type = element.get('type', '')
                 elementName = element.get('name', '')
                 plantuml_str += f"{type} {elementName}\n"
-            
+
                 # Añadir atributos para las clases
                 for attribute in element.get('attributes', []):
                     attributeName = attribute.get('name', '')
                     attributeType = attribute.get('type', '')
-                    visibility = self._visibilities[attribute.get('visibility', '')]
+                    visibility = self._visibilities.get(attribute.get('visibility', ''), '')
                     static = "{isStatic}" if attribute.get('isStatic', False) else ''
                     final = "{final}" if attribute.get('isFinal', False) else ''
                     plantuml_str += f"{elementName} : {visibility} {static} {final} {attributeType} {attributeName}\n"
@@ -463,27 +465,34 @@ class DecodeClass:
                 for method in element.get('methods', []):
                     methodName = method.get('name', '')
                     abstract = "{abstract}" if method.get('isAbstract', False) else ''
-                    visibility = self._visibilities[method.get('visibility', 'public')]
+                    visibility = self._visibilities.get(method.get('visibility', 'public'), '+')
                     returnType =  method.get('returnType', 'void')
-                
+
                     # Añadir parámetros a los métodos
                     params = ""
                     for param in method.get('params', []):
                         params += f"{param.get('type', '')} {param.get('name', '')} "
 
                     plantuml_str += f"{elementName} : {visibility} {abstract} {returnType} {methodName}({params[:-1]})\n"  # params[:-1] elimina el último espacio
-            
+
                 # Añadir relaciones entre clases
                 for relation in self._data.get('relationShips', []):
-                    relationType = self._relations_type[relation.get('type', '')]
+                    relationType = self._relations_type.get(relation.get('type', ''), '--')
                     source = relation.get('source', '') 
                     target = relation.get('target', '')
-                    multiplicityEnd1 = f"\"{relation['multiplicity'][0]}\"" if 'multiplicity' in relation else ''
-                    multiplicityEnd2 = f"\"{relation['multiplicity'][3]}\"" if 'multiplicity' in relation else ''
-            
+                    multiplicityEnd1 = ''
+                    multiplicityEnd2 = ''
+                    mult = relation.get('multiplicity')
+                    if isinstance(mult, (list, tuple)):
+                        if len(mult) > 0 and mult[0] is not None:
+                            multiplicityEnd1 = f'"{mult[0]}"'
+                        if len(mult) > 3 and mult[3] is not None:
+                            multiplicityEnd2 = f'"{mult[3]}"'
+
                     plantuml_str += f"{source} {multiplicityEnd1} {relationType} {multiplicityEnd2} {target}\n"
 
-                return plantuml_str
+            # Al final devolver el código generado (incluso si está vacío)
+            return plantuml_str
         except Exception as e:
             print(f"Error inesperado al generar codigo PlantUML: {e}")
             sys.exit(1)
