@@ -1,10 +1,38 @@
 import os
 import json
-from typing import Optional  
-from decoder import JsonPuml
 import jsonschema
-from Clasificador_diagrama import AdvancedDiagramClassifier
-from app.services.llm_client import ask_llm_for_diagram_type
+from typing import Optional  
+# imports relativos para funcionar cuando se carga como paquete
+from .decoder import JsonPuml
+try:
+    # intentar import relativo dentro del paquete
+    from .Clasificador_diagrama import AdvancedDiagramClassifier
+except Exception:
+    # fallback a import absoluto si se ejecuta fuera del paquete
+    try:
+        from Clasificador_diagrama import AdvancedDiagramClassifier
+    except Exception as e:
+        raise ImportError(
+            "No se pudo importar 'Clasificador_diagrama'. Asegúrate de que "
+            "Clasificador_diagrama.py esté dentro de ChatbotBack_End o disponible en PYTHONPATH. "
+            "Si trabajas con el paquete, añade un __init__.py en la carpeta ChatbotBack_End."
+        ) from e
+
+# Intentar importar el cliente LLM; si no existe, proporcionar un fallback mínimo
+try:
+    from app.services.llm_client import ask_llm_for_diagram_type
+except Exception:
+    try:
+        from .app.services.llm_client import ask_llm_for_diagram_type
+    except Exception:
+        # Fallback asíncrono mínimo para evitar fallos en tiempo de import
+        async def ask_llm_for_diagram_type(text: str):
+            return {
+                "resolved": False,
+                "question": "¿Quieres un diagrama de clases o un diagrama de casos de uso?",
+                "raw": None
+            }
+
 import re
 import asyncio
 
@@ -269,7 +297,8 @@ def classify_and_generate_diagram(text, uml_schema, user_id="default"):
         schema = get_schema(diagram_type)
         jsonschema.validate(instance=data, schema=schema)
         config = {
-            "plant_uml_path": os.path.join(os.getcwd(), "plant_uml_exc"),
+            # prefer a path relative to this module so generation works regardless of CWD
+            "plant_uml_path": os.path.join(os.path.dirname(__file__), "plant_uml_exc"),
             "plant_uml_version": "plantuml-1.2025.2.jar",
             "json_path": None,
             "output_path": os.path.join(os.getcwd(), "output"),
@@ -323,9 +352,54 @@ def regenerate_diagram_from_data(diagram_data: dict, user_id="default") -> str:
     genera el diagrama via JsonPuml y devuelve el contenido SVG (string) o
     lanza excepción en caso de error.
     """
-    diagram_type = "diagrama_clases" if diagram_data.get("diagramType") == "classDiagram" else "diagrama_casos_uso"
+    # Work on a shallow copy to avoid mutating the caller's dict
+    data = dict(diagram_data)
+
+    # Normalizar formatos antiguos -> nuevo esquema esperado por el decoder
+    # Some older flows / CRUD store classes under 'classes' and relationships under 'relationships'.
+    # Json schema and JsonPuml expect 'declaringElements' and 'relationShips'. Convert them.
+    if data.get("diagramType") == "classDiagram":
+        # Convert 'classes' -> 'declaringElements'
+        if "declaringElements" not in data and "classes" in data:
+            declaring = []
+            for cls in data.get("classes", []):
+                attrs = []
+                for a in cls.get("attributes", []):
+                    # normalize attribute fields with safe defaults
+                    attrs.append({
+                        "name": a.get("name"),
+                        "type": a.get("type", "String"),
+                        "visibility": a.get("visibility", "public"),
+                        "isStatic": a.get("isStatic", False),
+                        "isFinal": a.get("isFinal", False)
+                    })
+                methods = []
+                for m in cls.get("methods", []):
+                    methods.append({
+                        "name": m.get("name"),
+                        "returnType": m.get("returnType", "void"),
+                        "visibility": m.get("visibility", "public"),
+                        "isAbstract": m.get("isAbstract", False),
+                        "params": m.get("params", [])
+                    })
+                declaring.append({
+                    "type": "class",
+                    "name": cls.get("name"),
+                    "attributes": attrs,
+                    "methods": methods
+                })
+            data["declaringElements"] = declaring
+        # Convert relationships key if present
+        if "relations" in data and "relationShips" not in data:
+            data["relationShips"] = data.pop("relations")
+        if "relationships" in data and "relationShips" not in data:
+            data["relationShips"] = data.pop("relationships")
+
+    diagram_type = "diagrama_clases" if data.get("diagramType") == "classDiagram" else "diagrama_casos_uso"
     schema = get_schema(diagram_type)
-    jsonschema.validate(instance=diagram_data, schema=schema)
+    # Validate the normalized data
+    jsonschema.validate(instance=data, schema=schema)
+
     config = {
         "plant_uml_path": os.path.join(os.getcwd(), "plant_uml_exc"),
         "plant_uml_version": "plantuml-1.2025.2.jar",
@@ -333,7 +407,7 @@ def regenerate_diagram_from_data(diagram_data: dict, user_id="default") -> str:
         "output_path": os.path.join(os.getcwd(), "output"),
         "diagram_name": f"diagram_{user_id}"
     }
-    config["data"] = diagram_data
+    config["data"] = data
     json_puml = JsonPuml(config=config)
     json_puml.generate_diagram()
     svg_path = os.path.join(config["output_path"], config["diagram_name"] + ".svg")

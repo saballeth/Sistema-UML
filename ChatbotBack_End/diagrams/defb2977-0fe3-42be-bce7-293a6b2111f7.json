@@ -1,0 +1,21 @@
+{
+  "name": "mi_diagrama",
+  "diagramType": "classDiagram",
+  "id": "defb2977-0fe3-42be-bce7-293a6b2111f7",
+  "classes": [
+    {
+      "id": "78ec34a6-deba-48ef-bfb8-11bb18572d01",
+      "name": "Persona",
+      "attributes": [
+        {
+          "name": "nombre"
+        },
+        {
+          "name": "edad"
+        }
+      ],
+      "methods": [],
+      "relationships": []
+    }
+  ]
+}

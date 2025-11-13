@@ -1,0 +1,49 @@
+{
+  "name": "mi_diagrama",
+  "diagramType": "classDiagram",
+  "id": "f471a580-94ec-46be-8167-3bb3f064c193",
+  "classes": [
+    {
+      "id": "ed7e7a15-3304-4352-a2f3-360b1d769986",
+      "name": "Persona",
+      "attributes": [
+        {
+          "name": "nombre"
+        },
+        {
+          "name": "edad"
+        }
+      ],
+      "methods": [],
+      "relationships": []
+    },
+    {
+      "id": "d1a80bee-a0a9-4af8-b0b7-1110c3d9de19",
+      "name": "Persona",
+      "attributes": [
+        {
+          "name": "nombre"
+        },
+        {
+          "name": "edad"
+        }
+      ],
+      "methods": [],
+      "relationships": []
+    },
+    {
+      "id": "2145643d-6177-4c83-8be5-95879fc179ec",
+      "name": "Persona",
+      "attributes": [
+        {
+          "name": "nombre"
+        },
+        {
+          "name": "edad"
+        }
+      ],
+      "methods": [],
+      "relationships": []
+    }
+  ]
+}

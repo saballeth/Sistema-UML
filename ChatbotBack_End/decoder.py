@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import shutil
 
 class JsonPuml:
     """
@@ -35,26 +36,27 @@ class JsonPuml:
         """
         # Inicializa con config; si 'data' viene en config usarla (no abrir archivos).
         try:
+            # claves obligatorias
             self._plant_uml_path = config['plant_uml_path']
             self._plant_uml_version = config['plant_uml_version']
             self._json_path = config.get('json_path')
-            self._output_path = config.get('output_path')
-            self._diagram_name = config.get('diagram_name')
+            self._output_path = config.get('output_path') or os.getcwd()
+            self._diagram_name = config.get('diagram_name') or "diagram"
 
-            # Si se proporcionan datos inline, úsalos y genera el código
+            # Datos: preferir 'data' pasado en config, si no intentar cargar json_path si existe
             if 'data' in config and config['data'] is not None:
                 self._data = config['data']
-                self._code = self._json_to_plantuml()
+            elif self._json_path:
+                self._data = self._get_data()
             else:
-                # No forzar lectura en init si no hay json_path
                 self._data = None
-                self._code = None
+
+            # Generar código inmediatamente si hay datos
+            self._code = self._json_to_plantuml() if self._data is not None else None
         except KeyError as e:
-            print(f"Error de configuracion: falta la clave {e} en el diccionario de configuracion")
-            sys.exit(1)
+            raise KeyError(f"Configuración inválida: falta la clave {e}") from e
         except Exception as e:
-            print(f"Error inesperado durante la inicializacion de {e}")
-            sys.exit(1)
+            raise RuntimeError(f"Error inesperado durante la inicializacion: {e}") from e
 
     def generate_diagram(self):
         """
@@ -65,39 +67,35 @@ class JsonPuml:
         2. Guarda el código PlantUML en un archivo `.puml`.
         3. Ejecuta PlantUML para generar el diagrama en el formato deseado.
         """
+        # Validaciones previas
+        if not self._code:
+            raise RuntimeError("No hay código PlantUML para generar (self._code es None o vacío).")
+
+        os.makedirs(self._output_path, exist_ok=True)
+        out = os.path.join(self._output_path, self._diagram_name + ".puml")
+        plant_uml = os.path.join(self._plant_uml_path, self._plant_uml_version)
+
+        # Verificar entorno: java disponible y archivo jar existe
+        if shutil.which("java") is None:
+            raise FileNotFoundError("No se encontró 'java' en PATH. Java es requerido para ejecutar PlantUML.")
+        if not os.path.isfile(plant_uml):
+            raise FileNotFoundError(f"No se encontró el JAR de PlantUML en: {plant_uml}")
+
+        # Guardar .puml
+        with open(out, "w", encoding="utf-8") as output:
+            output.write(self._code)
+
+        # Ejecutar PlantUML y capturar salida para diagnóstico
         try:
-        # Crear la carpeta de salida si no existe
-            os.makedirs(self._output_path, exist_ok=True)
-
-        # Ruta del archivo de entrada .puml
-            out = os.path.join(self._output_path, self._diagram_name + ".puml")
-
-        # Ruta al archivo JAR de PlantUML
-            plant_uml = os.path.join(self._plant_uml_path, self._plant_uml_version)
-
-        # Guardar el código PlantUML en un archivo
-            with open(out, "w", encoding="utf-8") as output:
-                output.write(self._code)
-
-        # Ejecutar PlantUML para generar la imagen
-            # Forzar salida en formato SVG para que el flujo espere .svg
-            subprocess.run([
-                "java", "-jar", plant_uml,  # Ejecutar PlantUML
-                "-tsvg",                    # generar SVG
-                "-o", self._output_path,    # Carpeta de salida
-                out                          # Archivo .puml de entrada
-            ], check=True)
-
-        except FileNotFoundError as e:
-            print(f"Error: Archivo no encontrado - {e}")
-            sys.exit(1)
+            proc = subprocess.run(
+                ["java", "-jar", plant_uml, "-tsvg", "-o", self._output_path, out],
+                check=True, capture_output=True, text=True
+            )
         except subprocess.CalledProcessError as e:
-            print(f"Error al ejecutar PlantUML: {e}")
-            sys.exit(1)
+            msg = f"PlantUML falló (returncode={e.returncode}). stdout:\n{e.stdout}\nstderr:\n{e.stderr}"
+            raise RuntimeError(msg) from e
         except Exception as e:
-            print(f"Error inesperado al generar el diagrama: {e}")
-            sys.exit(1)
-
+            raise RuntimeError(f"Error inesperado al ejecutar PlantUML: {e}") from e
 
     def _get_data(self) -> dict:
         """
@@ -110,19 +108,16 @@ class JsonPuml:
             dict: Los datos cargados del archivo JSON.
         """
         try:
-            with open(self._json_path, "r", encoding="utf-8") as input:
-                data = json.load(input)
-            return data
+            if not self._json_path:
+                raise ValueError("json_path no está definido en la configuración.")
+            with open(self._json_path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
         except FileNotFoundError as e:
-            print(f"Error, el archivo JSON no fue encontrado: {e}")
-            sys.exit(1)
+            raise FileNotFoundError(f"Archivo JSON no encontrado: {self._json_path}") from e
         except json.JSONDecodeError as e:
-            print(f"Error, Archivo JSON mal formado: {e}")
-            sys.exit(1)
+            raise ValueError(f"JSON mal formado en {self._json_path}: {e}") from e
         except Exception as e:
-            print(f"Error inesperado al cargar el archivo JSON: {e}")
-            sys.exit(1)
-
+            raise RuntimeError(f"Error inesperado al cargar el archivo JSON: {e}") from e
 
     def _json_to_plantuml(self) -> str:
         """
@@ -178,8 +173,7 @@ class DecodeUseCase:
             self._data = data
             self._use_case_code = self._generate_code()
         except Exception as e:
-            print("Error inesperado en DecodeUseCase: {e}")
-            sys.exit(1)
+            raise RuntimeError(f"Error inesperado en DecodeUseCase: {e}") from e
 
     def get_code(self) -> str:
         """

@@ -1,15 +1,30 @@
 from fastapi import FastAPI, WebSocket, HTTPException, Request, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import json
-import os
-import uuid
 import jsonschema
 from jsonschema import validate, ValidationError
-from decoder import JsonPuml
-from main import classify_and_generate_diagram, regenerate_diagram_from_data, diagram_classifier, LLM_FALLBACK_CONFIDENCE
-from OperationCRUD import DiagramCRUD
-from app.services.llm_client import ask_llm_for_diagram_type
+from .decoder import JsonPuml
+from .main import classify_and_generate_diagram, regenerate_diagram_from_data, diagram_classifier, LLM_FALLBACK_CONFIDENCE, get_schema
+from .OperationCRUD import DiagramCRUD
+
+# safe import for optional app.services.llm_client (fall back to a minimal async stub)
+try:
+    from app.services.llm_client import ask_llm_for_diagram_type
+except Exception:
+    try:
+        from .app.services.llm_client import ask_llm_for_diagram_type
+    except Exception:
+        async def ask_llm_for_diagram_type(text: str):
+            # Minimal fallback used for local testing when the 'app' package isn't available
+            return {
+                "resolved": False,
+                "question": "¿Quieres un diagrama de clases o un diagrama de casos de uso?",
+                "diagram_type": None,
+                "raw": None
+            }
+import os
+import uuid
+import json
 
 # Cargar esquemas individuales desde la carpeta "Validation Schemas"
 SCHEMAS = {}
@@ -51,6 +66,25 @@ os.makedirs(DIAGRAMS_DIR, exist_ok=True)
 def _diagram_path(diagram_id: str) -> str:
     return os.path.join(DIAGRAMS_DIR, f"{diagram_id}.json")
 
+
+def _puml_from_data(data: dict, diagram_name: str = "output") -> str:
+    """Return PlantUML source for given diagram data without attempting to run Java/PlantUML."""
+    try:
+        # Prefer module-relative paths so the service works regardless of current working directory
+        module_dir = os.path.dirname(__file__)
+        config = {
+            "plant_uml_path": os.path.join(module_dir, "plant_uml_exc"),
+            "plant_uml_version": "plantuml-1.2025.2.jar",
+            "json_path": None,
+            "output_path": os.path.join(module_dir, "output"),
+            "diagram_name": diagram_name,
+        }
+        jp = JsonPuml(config=config)
+        jp._data = data
+        return jp._json_to_plantuml()
+    except Exception as e:
+        return f"ERROR_GENERATING_PUML: {e}"
+
 @app.post("/diagrams")
 async def create_diagram(request: Request):
     body = await request.json()
@@ -80,9 +114,14 @@ async def create_class(diagram_id: str, request: Request):
     attributes = body.get("attributes", [])
     crud = DiagramCRUD.load_from_file(path)
     new_cls = crud.create_class(class_name, attributes)
-    # regenerar diagrama y devolver svg
-    svg = regenerate_diagram_from_data(crud.diagram)
-    return {"class": new_cls, "svg": svg}
+    # regenerar diagrama y devolver svg (fallback to PUML if generation fails)
+    try:
+        svg = regenerate_diagram_from_data(crud.diagram)
+        return {"class": new_cls, "svg": svg}
+    except Exception as e:
+        # return PlantUML source so front-end can still render or inspect
+        puml = _puml_from_data(crud.diagram, diagram_name=diagram_id)
+        return {"class": new_cls, "error": str(e), "puml": puml}
 
 @app.put("/diagrams/{diagram_id}/classes/{class_id}")
 async def update_class(diagram_id: str, class_id: str, request: Request):
@@ -94,8 +133,12 @@ async def update_class(diagram_id: str, class_id: str, request: Request):
     updated = crud.update_class(class_id, body)
     if not updated:
         raise HTTPException(status_code=404, detail="Clase no encontrada")
-    svg = regenerate_diagram_from_data(crud.diagram)
-    return {"class": updated, "svg": svg}
+    try:
+        svg = regenerate_diagram_from_data(crud.diagram)
+        return {"class": updated, "svg": svg}
+    except Exception as e:
+        puml = _puml_from_data(crud.diagram, diagram_name=diagram_id)
+        return {"class": updated, "error": str(e), "puml": puml}
 
 @app.delete("/diagrams/{diagram_id}/classes/{class_id}")
 async def delete_class(diagram_id: str, class_id: str):
@@ -106,8 +149,12 @@ async def delete_class(diagram_id: str, class_id: str):
     ok = crud.delete_class(class_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Clase no encontrada")
-    svg = regenerate_diagram_from_data(crud.diagram)
-    return {"deleted": ok, "svg": svg}
+    try:
+        svg = regenerate_diagram_from_data(crud.diagram)
+        return {"deleted": ok, "svg": svg}
+    except Exception as e:
+        puml = _puml_from_data(crud.diagram, diagram_name=diagram_id)
+        return {"deleted": ok, "error": str(e), "puml": puml}
 
 # WebSocket simple para ediciones en tiempo real (envía y recibe JSON con comandos CRUD)
 @app.websocket("/ws/editor/{diagram_id}")
@@ -126,12 +173,20 @@ async def ws_editor(websocket: WebSocket, diagram_id: str):
                 cmd = payload.get("cmd")
                 if cmd == "add_class":
                     new_cls = crud.create_class(payload.get("name"), payload.get("attributes", []))
-                    svg = regenerate_diagram_from_data(crud.diagram)
-                    await websocket.send_json({"ok": True, "class": new_cls, "svg": svg})
+                    try:
+                        svg = regenerate_diagram_from_data(crud.diagram)
+                        await websocket.send_json({"ok": True, "class": new_cls, "svg": svg})
+                    except Exception as e:
+                        puml = _puml_from_data(crud.diagram, diagram_name=diagram_id)
+                        await websocket.send_json({"ok": True, "class": new_cls, "error": str(e), "puml": puml})
                 elif cmd == "delete_class":
                     ok = crud.delete_class(payload.get("class_id"))
-                    svg = regenerate_diagram_from_data(crud.diagram)
-                    await websocket.send_json({"ok": ok, "svg": svg})
+                    try:
+                        svg = regenerate_diagram_from_data(crud.diagram)
+                        await websocket.send_json({"ok": ok, "svg": svg})
+                    except Exception as e:
+                        puml = _puml_from_data(crud.diagram, diagram_name=diagram_id)
+                        await websocket.send_json({"ok": ok, "error": str(e), "puml": puml})
                 else:
                     await websocket.send_json({"error": "Comando no soportado"})
             except Exception as e:
@@ -148,7 +203,8 @@ async def process_uml(request: Request):
         if schema is not None:
             validate(instance=data, schema=schema)
         config = {
-            "plant_uml_path": os.path.join(os.getcwd(), "plant_uml_exc"),
+            # prefer a path relative to this module so the service works regardless of CWD
+            "plant_uml_path": os.path.join(os.path.dirname(__file__), "plant_uml_exc"),
             "plant_uml_version": "plantuml-1.2025.2.jar",
             "json_path": None,
             "output_path": os.path.join(os.getcwd(), "output"),
@@ -343,3 +399,70 @@ async def chat_text(request: Request):
     # Si hay intención clara y confianza suficiente, intentar generar diagrama
     result = classify_and_generate_diagram(text, None, user_id=user_id)
     return JSONResponse(result)
+
+def regenerate_diagram_from_data(diagram_data: dict, user_id="default") -> str:
+    """
+    Recibe un JSON completo del diagrama, lo valida con el esquema apropiado,
+    genera el diagrama via JsonPuml y devuelve el contenido SVG (string) o
+    lanza excepción en caso de error.
+    """
+    # Normalizar formatos antiguos -> nuevo esquema esperado por el decoder
+    data = dict(diagram_data)  # shallow copy to avoid mutating caller
+
+    # If repo stored classes under "classes" (OperationCRUD) convert to "declaringElements"
+    if data.get("diagramType") == "classDiagram" and "declaringElements" not in data and "classes" in data:
+        declaring = []
+        for cls in data.get("classes", []):
+            attrs = []
+            for a in cls.get("attributes", []):
+                attrs.append({
+                    "name": a.get("name"),
+                    "type": a.get("type", "String"),
+                    "visibility": a.get("visibility", "public"),
+                    "isStatic": a.get("isStatic", False),
+                    "isFinal": a.get("isFinal", False)
+                })
+            methods = []
+            for m in cls.get("methods", []):
+                methods.append({
+                    "name": m.get("name"),
+                    "returnType": m.get("returnType", "void"),
+                    "visibility": m.get("visibility", "public"),
+                    "isAbstract": m.get("isAbstract", False),
+                    "params": m.get("params", [])
+                })
+            declaring.append({
+                "type": "class",
+                "name": cls.get("name"),
+                "attributes": attrs,
+                "methods": methods
+            })
+        data["declaringElements"] = declaring
+        # map relationships key if present
+        if "relationships" in data and "relationShips" not in data:
+            data["relationShips"] = data.pop("relationships")
+        data.setdefault("relationShips", [])
+
+    # Validate using local loaded SCHEMAS if available
+    schema = _get_schema_for_data(data)
+    if schema is not None:
+        validate(instance=data, schema=schema)
+        module_dir = os.path.dirname(__file__)
+        config = {
+            "plant_uml_path": os.path.join(module_dir, "plant_uml_exc"),
+            "plant_uml_version": "plantuml-1.2025.2.jar",
+            "json_path": None,
+            "output_path": os.path.join(module_dir, "output"),
+            "diagram_name": f"diagram_{user_id}"
+        }
+    config["data"] = data
+    json_puml = JsonPuml(config=config)
+    json_puml._data = data
+    json_puml._code = json_puml._json_to_plantuml()
+    json_puml.generate_diagram()
+    svg_path = os.path.join(config["output_path"], config["diagram_name"] + ".svg")
+    if not os.path.exists(svg_path):
+        raise HTTPException(status_code=500, detail="No se pudo generar el archivo SVG.")
+    with open(svg_path, "r", encoding="utf-8") as f:
+        svg_content = f.read()
+    return svg_content
