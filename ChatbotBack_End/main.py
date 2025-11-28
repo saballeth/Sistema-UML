@@ -3,7 +3,12 @@ import json
 import jsonschema
 from typing import Optional  
 # imports relativos para funcionar cuando se carga como paquete
-from .decoder import JsonPuml
+try:
+    # prefer import relativo cuando se ejecuta como paquete
+    from .decoder import JsonPuml
+except Exception:
+    # fallback a import absoluto para ejecutar tests o ejecutar el módulo directamente
+    from decoder import JsonPuml
 try:
     # intentar import relativo dentro del paquete
     from .Clasificador_diagrama import AdvancedDiagramClassifier
